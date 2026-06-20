@@ -6,14 +6,25 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
+const REPO_ROOT = path.join(__dirname, "..");
 const EVE_BASE_URL = process.env.EVE_BASE_URL ?? "http://127.0.0.1:2000";
 const UI_PORT = Number(process.env.UI_PORT ?? 3001);
+
+const ALLOWED_DOC_PATHS: Record<string, string> = {
+  "/DETAILED_GUIDE.md": path.join(REPO_ROOT, "DETAILED_GUIDE.md"),
+  "/docs/assets/Eve_PM_Assistant_Mini_Course.pdf": path.join(
+    REPO_ROOT,
+    "docs/assets/Eve_PM_Assistant_Mini_Course.pdf",
+  ),
+};
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".ico": "image/x-icon",
+  ".md": "text/markdown; charset=utf-8",
+  ".pdf": "application/pdf",
 };
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -146,6 +157,12 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname.startsWith("/eve/")) {
     await proxyToEve(req, res, url.pathname, url.search);
+    return;
+  }
+
+  const docPath = ALLOWED_DOC_PATHS[url.pathname];
+  if (docPath) {
+    await serveStatic(req, res, docPath);
     return;
   }
 

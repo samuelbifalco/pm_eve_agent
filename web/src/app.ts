@@ -81,6 +81,33 @@ interface TurnState {
 
 const STREAM_TIMEOUT_MS = 120_000;
 const STREAM_OPEN_RETRIES = 8;
+const CONNECTED_LABEL = "Eve connected";
+const OFFLINE_LABEL = "Eve offline";
+const OFFLINE_NOTICE =
+  "Eve is not reachable. Start the Eve agent in Terminal 1.";
+const OFFLINE_CMD = "npm run dev";
+const OFFLINE_CHAT_MESSAGE =
+  "Eve is offline. Start the Eve agent and try again.";
+
+const EMPTY_STATE_HTML = `
+<div class="empty-state">
+  <h2>What do you want to build or decide?</h2>
+  <p>Start with a prompt, pick a quick action, or try an example below.</p>
+  <div class="example-cards">
+    <button type="button" class="example-card" data-template="triage">
+      <strong>Triage customer feedback</strong>
+      <span>Normalize interviews and support notes into structured signals.</span>
+    </button>
+    <button type="button" class="example-card" data-template="score">
+      <strong>Prioritize roadmap bets</strong>
+      <span>Score opportunities with a RICE-like model.</span>
+    </button>
+    <button type="button" class="example-card" data-template="prd">
+      <strong>Draft a PRD</strong>
+      <span>Generate a structured product requirements doc.</span>
+    </button>
+  </div>
+</div>`;
 
 const conversationEl = document.getElementById("conversation")!;
 const promptEl = document.getElementById("prompt") as HTMLTextAreaElement;
@@ -88,6 +115,7 @@ const sendBtn = document.getElementById("send") as HTMLButtonElement;
 const clearBtn = document.getElementById("clear") as HTMLButtonElement;
 const loadingEl = document.getElementById("loading")!;
 const statusBarEl = document.getElementById("status-bar")!;
+const eveEndpointEl = document.getElementById("eve-endpoint")!;
 const debugPanelEl = document.getElementById("debug-panel")!;
 const debugOutputEl = document.getElementById("debug-output")!;
 const toggleDebugBtn = document.getElementById("toggle-debug") as HTMLButtonElement;
@@ -97,6 +125,7 @@ let debugEvents: DebugEvent[] = [];
 let debugVisible = false;
 let isBusy = false;
 let activeAbortController: AbortController | null = null;
+let eveBaseUrl = "http://127.0.0.1:2000";
 
 function setBusy(busy: boolean): void {
   isBusy = busy;
@@ -110,13 +139,83 @@ function abortActiveStream(): void {
   activeAbortController = null;
 }
 
-function setError(message: string): void {
-  statusBarEl.textContent = message;
-  statusBarEl.classList.add("error");
+function recordDebugError(source: string, detail: unknown): void {
+  debugEvents.push({ eventType: `error.${source}`, raw: detail });
+  if (debugEvents.length > 100) debugEvents = debugEvents.slice(-100);
+  if (debugVisible) {
+    debugOutputEl.textContent = JSON.stringify(debugEvents, null, 2);
+  }
 }
 
-function clearError(): void {
-  statusBarEl.classList.remove("error");
+function setCheckingStatus(): void {
+  statusBarEl.textContent = "Checking Eve…";
+  statusBarEl.className = "status-pill status-pill--checking";
+  eveEndpointEl.textContent = "";
+  eveEndpointEl.className = "eve-endpoint";
+}
+
+function setConnectedStatus(endpoint?: string): void {
+  if (endpoint) eveBaseUrl = endpoint;
+  statusBarEl.textContent = CONNECTED_LABEL;
+  statusBarEl.className = "status-pill status-pill--connected";
+  eveEndpointEl.textContent = eveBaseUrl;
+  eveEndpointEl.className = "eve-endpoint";
+}
+
+function setOfflineStatus(rawDetail?: unknown): void {
+  statusBarEl.textContent = OFFLINE_LABEL;
+  statusBarEl.className = "status-pill status-pill--offline error";
+  eveEndpointEl.className = "eve-endpoint offline-notice";
+  eveEndpointEl.innerHTML = `${escapeHtml(OFFLINE_NOTICE)}<code class="offline-cmd">${escapeHtml(OFFLINE_CMD)}</code>`;
+  if (rawDetail !== undefined) {
+    recordDebugError("connection", rawDetail);
+  }
+}
+
+function isEveOfflineError(raw: string): boolean {
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes("503") ||
+    lower.includes("502") ||
+    lower.includes("504") ||
+    lower.includes("unreachable") ||
+    lower.includes("unavailable") ||
+    lower.includes("failed to reach eve") ||
+    lower.includes("eve unreachable") ||
+    lower.includes("dev server is unavailable") ||
+    lower.includes("networkerror") ||
+    lower.includes("failed to fetch")
+  );
+}
+
+function toFriendlyChatError(raw: string): string {
+  if (isEveOfflineError(raw)) return OFFLINE_CHAT_MESSAGE;
+  return "Something went wrong. Enable debug to inspect details.";
+}
+
+function renderEmptyState(): void {
+  conversationEl.innerHTML = EMPTY_STATE_HTML;
+  bindTemplateButtons(conversationEl);
+}
+
+function bindTemplateButtons(root: ParentNode): void {
+  for (const button of root.querySelectorAll<HTMLButtonElement>("[data-template]")) {
+    button.addEventListener("click", () => {
+      const key = button.dataset.template as TemplateKey | undefined;
+      if (!key || !(key in PROMPT_TEMPLATES)) return;
+      promptEl.value = PROMPT_TEMPLATES[key];
+      promptEl.focus();
+    });
+  }
+}
+
+function scrollConversationToBottom(force = false): void {
+  const threshold = 96;
+  const distanceFromBottom =
+    conversationEl.scrollHeight - conversationEl.scrollTop - conversationEl.clientHeight;
+  if (force || distanceFromBottom <= threshold) {
+    conversationEl.scrollTop = conversationEl.scrollHeight;
+  }
 }
 
 function removeEmptyState(): void {
@@ -128,11 +227,49 @@ function appendMessage(role: "user" | "assistant" | "tool", text: string): HTMLE
   removeEmptyState();
   const el = document.createElement("div");
   el.className = `message ${role}`;
-  const label = role === "user" ? "You" : role === "assistant" ? "Assistant" : "Tool";
-  el.innerHTML = `<span class="role">${label}</span>${escapeHtml(text)}`;
+
+  if (role === "tool") {
+    el.textContent = text.startsWith("Tool called:") ? text : `Tool called: ${text.replace(/^Called\s+/i, "")}`;
+    conversationEl.appendChild(el);
+    scrollConversationToBottom(true);
+    return el;
+  }
+
+  const label = role === "user" ? "You" : "PM Assistant";
+
+  if (role === "assistant") {
+    el.innerHTML = `
+      <div class="message-header">
+        <span class="role">${label}</span>
+        <button class="copy-btn" type="button" aria-label="Copy message">Copy</button>
+      </div>
+      <div class="message-body">${escapeHtml(text)}</div>`;
+  } else {
+    el.innerHTML = `
+      <span class="role">${label}</span>
+      <div class="message-body">${escapeHtml(text)}</div>`;
+  }
+
   conversationEl.appendChild(el);
-  conversationEl.scrollTop = conversationEl.scrollHeight;
+  scrollConversationToBottom(true);
   return el;
+}
+
+async function copyMessageText(button: HTMLButtonElement, text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "Copied";
+    button.classList.add("copied");
+    setTimeout(() => {
+      button.textContent = "Copy";
+      button.classList.remove("copied");
+    }, 1600);
+  } catch {
+    button.textContent = "Failed";
+    setTimeout(() => {
+      button.textContent = "Copy";
+    }, 1600);
+  }
 }
 
 function escapeHtml(text: string): string {
@@ -349,8 +486,18 @@ function updateAssistantBubble(state: TurnState): void {
     state.assistantEl = appendMessage("assistant", state.assistantText);
     return;
   }
-  state.assistantEl.innerHTML = `<span class="role">Assistant</span>${escapeHtml(state.assistantText)}`;
-  conversationEl.scrollTop = conversationEl.scrollHeight;
+  const body = state.assistantEl.querySelector(".message-body");
+  if (body) {
+    body.textContent = state.assistantText;
+  } else {
+    state.assistantEl.innerHTML = `
+      <div class="message-header">
+        <span class="role">PM Assistant</span>
+        <button class="copy-btn" type="button" aria-label="Copy message">Copy</button>
+      </div>
+      <div class="message-body">${escapeHtml(state.assistantText)}</div>`;
+  }
+  scrollConversationToBottom();
 }
 
 function handleStreamEvent(event: RawEvent, state: TurnState): void {
@@ -359,7 +506,8 @@ function handleStreamEvent(event: RawEvent, state: TurnState): void {
   session.streamIndex += 1;
 
   for (const line of extractToolLines(event, eventType)) {
-    appendMessage("tool", line);
+    const toolLabel = line.startsWith("Called ") ? line.replace(/^Called /, "") : line;
+    appendMessage("tool", toolLabel);
   }
 
   const text = isAssistantTextEvent(eventType) ? extractTextFromEvent(event, eventType) : null;
@@ -490,7 +638,6 @@ async function sendMessage(message: string): Promise<void> {
   const abortController = new AbortController();
   activeAbortController = abortController;
 
-  clearError();
   appendMessage("user", trimmed);
   promptEl.value = "";
   setBusy(true);
@@ -548,14 +695,15 @@ async function sendMessage(message: string): Promise<void> {
       );
     }
 
-    statusBarEl.textContent = `Connected to Eve · session ${session.sessionId}`;
+    setConnectedStatus();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return;
     }
-    const message = error instanceof Error ? error.message : "Unknown error";
-    setError(message);
-    appendMessage("assistant", `Error: ${message}`);
+    const raw = error instanceof Error ? error.message : "Unknown error";
+    recordDebugError("request", raw);
+    setOfflineStatus(raw);
+    appendMessage("assistant", toFriendlyChatError(raw));
   } finally {
     if (activeAbortController === abortController) {
       activeAbortController = null;
@@ -570,23 +718,35 @@ function clearSession(): void {
   session = { streamIndex: 0 };
   debugEvents = [];
   debugOutputEl.textContent = "[]";
-  conversationEl.innerHTML =
-    '<div class="empty-state">Send a prompt or pick a quick action to get started.</div>';
-  clearError();
-  statusBarEl.textContent = "Session cleared. Next send starts a new Eve session.";
+  renderEmptyState();
+  void checkHealth();
 }
 
 async function checkHealth(): Promise<void> {
+  setCheckingStatus();
   try {
     const response = await fetch("/api/health");
-    const data = (await response.json()) as { eve?: string; hint?: string };
+    const data = (await response.json()) as {
+      eve?: string;
+      hint?: string;
+      eveBaseUrl?: string;
+      eveHealth?: unknown;
+    };
+    const endpoint = data.eveBaseUrl ?? eveBaseUrl;
     if (data.eve === "ok") {
-      statusBarEl.textContent = "Eve agent is reachable. Ready to chat.";
+      setConnectedStatus(endpoint);
       return;
     }
-    setError(data.hint ?? "Eve agent is not reachable. Run npm run dev in another terminal.");
-  } catch {
-    setError("UI server health check failed.");
+    setOfflineStatus({
+      eve: data.eve,
+      hint: data.hint,
+      eveBaseUrl: endpoint,
+      eveHealth: data.eveHealth,
+      status: response.status,
+    });
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : "UI health check failed";
+    setOfflineStatus(raw);
   }
 }
 
@@ -612,7 +772,7 @@ promptEl.addEventListener("keydown", (event) => {
   }
 });
 
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-template]")) {
+for (const button of document.querySelectorAll<HTMLButtonElement>(".sidebar [data-template]")) {
   button.addEventListener("click", () => {
     const key = button.dataset.template as TemplateKey | undefined;
     if (!key || !(key in PROMPT_TEMPLATES)) return;
@@ -621,4 +781,17 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-templat
   });
 }
 
+conversationEl.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement) || !target.classList.contains("copy-btn")) {
+    return;
+  }
+  const message = target.closest(".message.assistant");
+  const body = message?.querySelector(".message-body");
+  if (body?.textContent) {
+    void copyMessageText(target, body.textContent);
+  }
+});
+
+renderEmptyState();
 void checkHealth();

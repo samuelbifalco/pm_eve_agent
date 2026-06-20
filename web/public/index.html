@@ -7,16 +7,40 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="page">
-      <header>
-        <h1>PM Assistant</h1>
-        <p>Triage feedback, score opportunities, draft PRDs, and create action plans.</p>
-        <div id="status-bar" class="status-bar">Checking Eve connection…</div>
+    <div class="app">
+      <header class="app-header">
+        <div class="header-main">
+          <div class="header-title-row">
+            <h1>PM Assistant</h1>
+            <span class="badge-prototype">Local prototype</span>
+          </div>
+          <p class="subtitle">
+            Triage feedback, score opportunities, draft PRDs, and create action plans.
+          </p>
+          <div class="header-status">
+            <span id="status-bar" class="status-pill status-pill--checking">Checking Eve…</span>
+            <span id="eve-endpoint" class="eve-endpoint"></span>
+          </div>
+        </div>
+        <nav class="header-links" aria-label="Documentation">
+          <a
+            href="https://github.com/samuelbifalco/pm_eve_agent/blob/main/DETAILED_GUIDE.md"
+            target="_blank"
+            rel="noreferrer"
+            >Open guide on GitHub</a
+          >
+          <a
+            href="https://github.com/samuelbifalco/pm_eve_agent/blob/main/docs/assets/Eve_PM_Assistant_Mini_Course.pdf"
+            target="_blank"
+            rel="noreferrer"
+            >Mini-course PDF</a
+          >
+        </nav>
       </header>
 
-      <div class="layout">
+      <div class="app-body">
         <aside class="sidebar">
-          <h2>Quick actions</h2>
+          <h2 class="sidebar-title">Quick Actions</h2>
           <div class="quick-actions">
             <button type="button" data-template="triage">Triage feedback</button>
             <button type="button" data-template="score">Score opportunities</button>
@@ -25,36 +49,40 @@
             <button type="button" data-template="issues">Search mock issues</button>
             <button type="button" data-template="decision">Save decision log</button>
           </div>
+          <p class="sidebar-help">Quick actions insert editable prompt templates.</p>
         </aside>
 
-        <section class="chat-panel">
-          <div id="conversation" class="conversation">
-            <div class="empty-state">
-              Send a prompt or pick a quick action to get started.
-            </div>
-          </div>
-          <div id="loading" class="loading hidden">
+        <main class="main-panel">
+          <div id="conversation" class="conversation"></div>
+
+          <div id="loading" class="loading hidden" aria-live="polite">
             <span class="spinner" aria-hidden="true"></span>
+            <span class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
             <span>Agent is working…</span>
           </div>
-        </section>
-      </div>
 
-      <section class="composer">
-        <textarea
-          id="prompt"
-          placeholder="Ask the PM assistant anything…"
-          aria-label="Message input"
-        ></textarea>
-        <div class="composer-actions">
-          <button id="send" class="primary" type="button">Send</button>
-          <button id="clear" class="secondary" type="button">Clear session</button>
-          <button id="toggle-debug" class="secondary" type="button">Show debug</button>
-        </div>
-        <div id="debug-panel" class="debug-panel hidden">
-          <pre id="debug-output">[]</pre>
-        </div>
-      </section>
+          <section class="composer">
+            <label class="composer-label" for="prompt">Message</label>
+            <textarea
+              id="prompt"
+              placeholder="Paste feedback, ask for a PRD, or choose a quick action…"
+              aria-label="Message input"
+            ></textarea>
+            <div class="composer-footer">
+              <div class="composer-actions">
+                <button id="send" class="btn btn-primary" type="button">Send</button>
+                <button id="clear" class="btn btn-secondary" type="button">Clear session</button>
+                <button id="toggle-debug" class="btn btn-ghost" type="button">Show debug</button>
+              </div>
+              <span class="composer-hint"><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> to send</span>
+            </div>
+            <div id="debug-panel" class="debug-panel hidden">
+              <div class="debug-panel-header">Stream events (last 100)</div>
+              <pre id="debug-output">[]</pre>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
 
     <script type="module" src="/app.js"></script>
