@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PM Assistant</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <h1>PM Assistant</h1>
+        <p>Triage feedback, score opportunities, draft PRDs, and create action plans.</p>
+        <div id="status-bar" class="status-bar">Checking Eve connection…</div>
+      </header>
+
+      <div class="layout">
+        <aside class="sidebar">
+          <h2>Quick actions</h2>
+          <div class="quick-actions">
+            <button type="button" data-template="triage">Triage feedback</button>
+            <button type="button" data-template="score">Score opportunities</button>
+            <button type="button" data-template="prd">Draft PRD</button>
+            <button type="button" data-template="plan">Create action plan</button>
+            <button type="button" data-template="issues">Search mock issues</button>
+            <button type="button" data-template="decision">Save decision log</button>
+          </div>
+        </aside>
+
+        <section class="chat-panel">
+          <div id="conversation" class="conversation">
+            <div class="empty-state">
+              Send a prompt or pick a quick action to get started.
+            </div>
+          </div>
+          <div id="loading" class="loading hidden">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Agent is working…</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="composer">
+        <textarea
+          id="prompt"
+          placeholder="Ask the PM assistant anything…"
+          aria-label="Message input"
+        ></textarea>
+        <div class="composer-actions">
+          <button id="send" class="primary" type="button">Send</button>
+          <button id="clear" class="secondary" type="button">Clear session</button>
+          <button id="toggle-debug" class="secondary" type="button">Show debug</button>
+        </div>
+        <div id="debug-panel" class="debug-panel hidden">
+          <pre id="debug-output">[]</pre>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

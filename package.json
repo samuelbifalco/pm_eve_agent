@@ -1,6 +1,7 @@
 {
   "name": "my-agent",
   "version": "0.0.0",
+  "license": "MIT",
   "type": "module",
   "imports": {
     "#*": "./agent/*",
@@ -8,11 +9,14 @@
   },
   "scripts": {
     "build": "eve build",
+    "build:ui": "tsgo -p web/tsconfig.json",
     "dev": "eve dev",
+    "dev:ui": "npm run build:ui && node --experimental-strip-types web/server.ts",
     "start": "eve start",
-    "typecheck": "tsgo"
+    "typecheck": "tsgo && tsgo -p web/tsconfig.json"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.73",
     "@vercel/connect": "0.2.2",
     "ai": "7.0.0-beta.178",
     "eve": "^0.11.7",
